@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import types
+from pathlib import Path
 from unittest.mock import MagicMock, patch, call
 import pandas as pd
 import numpy as np
@@ -135,62 +136,55 @@ def test_get_lap_by_number():
 # main — save vs show
 # ---------------------------------------------------------------------------
 
-@patch("speedtrace.fastf1")
-@patch("speedtrace.plt")
-def test_main_save_calls_savefig(mock_plt, mock_fastf1, tmp_path, capsys):
-    import matplotlib
-    matplotlib.use("Agg")
-
-    tel1 = _make_telemetry()
-    tel2 = _make_telemetry()
-    lap1 = _make_lap(tel1)
-    lap2 = _make_lap(tel2)
-
+def _run_main_mocked(argv: list[str], tmp_path):
+    """Helper: run main() with fastf1 and build_plot mocked, cwd set to tmp_path."""
+    import os
+    tel1, tel2 = _make_telemetry(), _make_telemetry()
+    lap1, lap2 = _make_lap(tel1), _make_lap(tel2)
     mock_session = MagicMock()
-    mock_fastf1.get_session.return_value = mock_session
     mock_session.laps = _make_laps(lap1, lap2)
 
-    save_path = str(tmp_path / "output.png")
-
-    # build_plot returns a real fig so we can check savefig is called
-    import matplotlib.pyplot as real_plt
-    real_fig = real_plt.figure()
-    mock_plt.subplots.return_value = (real_fig, real_fig.subplots(4, 1))
-
-    with patch("speedtrace.build_plot") as mock_build, \
-         patch("speedtrace.Path") as mock_path_cls:
-        mock_path_cls.return_value.__truediv__ = MagicMock(return_value=MagicMock())
-        mock_path_cls.home.return_value.__truediv__ = MagicMock(return_value=MagicMock())
-
+    with patch("speedtrace.fastf1") as mock_fastf1, \
+         patch("speedtrace.plt") as mock_plt, \
+         patch("speedtrace.build_plot") as mock_build:
+        mock_fastf1.get_session.return_value = mock_session
         mock_fig = MagicMock()
         mock_build.return_value = mock_fig
 
-        speedtrace.main(["2024", "Monza", "Q", "VER", "HAM", "--save", save_path])
+        orig = os.getcwd()
+        os.chdir(tmp_path)
+        try:
+            speedtrace.main(argv)
+        finally:
+            os.chdir(orig)
 
+        return mock_fig, mock_plt
+
+
+def test_main_save_full_path_calls_savefig(tmp_path):
+    save_path = tmp_path / "result.png"
+    mock_fig, mock_plt = _run_main_mocked(
+        ["2024", "Monza", "Q", "VER", "HAM", "--save", str(save_path)],
+        tmp_path,
+    )
     mock_fig.savefig.assert_called_once_with(save_path, dpi=150, bbox_inches="tight")
     mock_plt.show.assert_not_called()
 
 
-@patch("speedtrace.fastf1")
-@patch("speedtrace.plt")
-def test_main_no_save_calls_show(mock_plt, mock_fastf1):
-    tel1 = _make_telemetry()
-    tel2 = _make_telemetry()
-    lap1 = _make_lap(tel1)
-    lap2 = _make_lap(tel2)
+def test_main_save_bare_filename_goes_to_output_dir(tmp_path):
+    mock_fig, mock_plt = _run_main_mocked(
+        ["2024", "Monza", "Q", "VER", "HAM", "--save", "result.png"],
+        tmp_path,
+    )
+    expected = Path("output") / "result.png"
+    mock_fig.savefig.assert_called_once_with(expected, dpi=150, bbox_inches="tight")
+    mock_plt.show.assert_not_called()
 
-    mock_session = MagicMock()
-    mock_fastf1.get_session.return_value = mock_session
-    mock_session.laps = _make_laps(lap1, lap2)
 
-    with patch("speedtrace.build_plot") as mock_build, \
-         patch("speedtrace.Path") as mock_path_cls:
-        mock_path_cls.home.return_value.__truediv__ = MagicMock(return_value=MagicMock())
-
-        mock_fig = MagicMock()
-        mock_build.return_value = mock_fig
-
-        speedtrace.main(["2024", "Monza", "Q", "VER", "HAM"])
-
+def test_main_no_save_calls_show(tmp_path):
+    mock_fig, mock_plt = _run_main_mocked(
+        ["2024", "Monza", "Q", "VER", "HAM"],
+        tmp_path,
+    )
     mock_plt.show.assert_called_once()
     mock_fig.savefig.assert_not_called()

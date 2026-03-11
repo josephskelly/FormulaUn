@@ -118,8 +118,14 @@ def main(argv: list[str] | None = None) -> None:
     fig = build_plot(tel1, tel2, args.driver1, args.driver2, title)
 
     if args.save:
-        fig.savefig(args.save, dpi=150, bbox_inches="tight")
-        print(f"Saved to {args.save}")
+        save_path = Path(args.save)
+        if save_path.parent == Path("."):
+            output_dir = Path("output")
+            output_dir.mkdir(exist_ok=True)
+            save_path = output_dir / save_path
+        save_path.parent.mkdir(parents=True, exist_ok=True)
+        fig.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"Saved to {save_path}")
     else:
         plt.show()
 
